@@ -1,13 +1,12 @@
-/*
-* Wireless Cold-Chain and Package Integrity Transity Monitor
-*
-* Main system file that will initialize hardware and run the primary system firmware.
-*/
+// Wireless Cold-Chain and Package Integrity Transity Monitor
+// Entrypoint for all subsystem files
 
 #include <stdint.h>
 #include <stdbool.h>
 
 #include "system.h"
+#include "scheduler.h"
+
 // Other subsystem headers will be called here as well
 
 int main(void) 
@@ -19,8 +18,12 @@ int main(void)
 	// example: Temperature_Init(); or Acceleromemter_Init();
 	
 	// Initialize the scheduler
+	Scheduler_Init();
 	
 	// Main application loop, should stay relatively simple with just the Scheduler running consistently
-	// Infinite while loop for preliminary testing
-	while (1) {}
+	while (1) 
+	{
+		// Scheduler is demonstrated to be running by the blinking red (makes overall LED yellow) LED
+		Scheduler_Run();
+	}
 }
