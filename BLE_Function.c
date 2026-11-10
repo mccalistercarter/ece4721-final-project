@@ -240,8 +240,9 @@ void init(void)
 
     // Bluetooth module on UART1.
     BT_Init();
-
-    // SW1 and SW2 (used by EXAMPLE 2).
+	
+		//Switches for testing purposes only. Will likely be removed for finished project
+    // SW1 and SW2 (used by EXAMPLE 2). 
     Buttons_Init();
 
     // Enable processor interrupts.
@@ -264,7 +265,7 @@ int main(void)
 
     while(1)
     {
-        /*
+			/* Debug testing:
         // EXAMPLE 0: show every byte received over Bluetooth on the debug
         // console, in hex (and as a character if it is printable).  Useful for
         // seeing exactly what the app sends from any screen.  Comment out
@@ -303,25 +304,25 @@ int main(void)
 
         // Send a message only when a button changes: when it goes down
         // (pressed) or comes back up (released).
-        if(sw1 && !sw1_was)
+        if(sw1 && !sw1_was) //Test demo for temperature alert
         {
-            BT_TX_String("SW1 pressed\n");
-            UARTprintf("Sent: SW1 pressed\n");
+            BT_TX_String("Temp too High\n");
+            UARTprintf("Sent: Temp Alert\n");
         }
         if(!sw1 && sw1_was)
         {
-            BT_TX_String("SW1 released\n");
-            UARTprintf("Sent: SW1 released\n");
+            BT_TX_String("Temp Stable\n");
+            UARTprintf("Sent: Temp Stable\n");
         }
-        if(sw2 && !sw2_was)
+        if(sw2 && !sw2_was) //Test demo for impact detection
         {
-            BT_TX_String("SW2 pressed\n");
-            UARTprintf("Sent: SW2 pressed\n");
+            BT_TX_String("Impact Detection\n");
+            UARTprintf("Sent: Impact Detection\n");
         }
         if(!sw2 && sw2_was)
         {
-            BT_TX_String("SW2 released\n");
-            UARTprintf("Sent: SW2 released\n");
+            //BT_TX_String("SW2 released\n");
+            //UARTprintf("Sent: SW2 released\n");
         }
         sw1_was = sw1;
         sw2_was = sw2;
