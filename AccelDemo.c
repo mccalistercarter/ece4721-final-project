@@ -1,4 +1,3 @@
-// Jon Kinney
 // MPU6500 Accelerometer Orientation Demo
 // TM4C123G LaunchPad + TivaWare API
 //
@@ -8,11 +7,6 @@
 //
 // MPU6500 communicates with TM4C123G through I2C0.
 //
-// TivaWare API Reference:
-// TivaWare Peripheral Driver Library User's Guide (SPMU298)
-//
-// TM4C123GH6PM Hardware Reference:
-// TM4C123GH6PM datasheet
 
 #include <stdint.h>
 #include <stdbool.h>
