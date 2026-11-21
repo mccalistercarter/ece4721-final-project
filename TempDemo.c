@@ -47,34 +47,36 @@
 #define T0_K         298.15f     // 25 C in kelvin
 #define ADC_MAX      4095.0f     // 12-bit ADC 
 
-#define TEMP_ALERT_C 29.0f       // LED threshold [NEW - replaces demo's count >= 2048]
-#define ADC_SEQ		 3			 // sampler sequencer 3
-#define N_SAMPLES    16          // readings averaged per update [noise filtering]
+#define TEMP_ALERT_HIGH 	29.0f       // LED higher threshold [NEW - replaces demo's count >= 2048]
+#define TEMP_ALERT_LOW 		20.0f		// LED lower threshold
+#define N_SAMPLES    		16          // readings averaged per update [noise filtering]
 
-#define RED_LED      GPIO_PIN_1		//PF1
-#define VREF_MV      3300UL        	//reference voltage in millivolts
+//================  PINS  ================//
+#define RED_LED   	GPIO_PIN_1		//PF1
+#define BLUE_LED   	GPIO_PIN_2		//PF2
+#define GREEN_LED 	GPIO_PIN_3		//PF3
+#define LEDS      	(RED_LED | BLUE_LED | GREEN_LED)
+
+#define ADC_SEQ		 3			 // sampler sequencer 3
+#define VREF_MV      3300UL      //reference voltage in millivolts
 
 //---Inspect in the debugger---//
-volatile unsigned long g_adc;      // raw 12-bit count, 0..4095
-volatile unsigned long g_mv;       // converted millivolts, 0..3300
-volatile float g_rt;               // thermistor resistance, ohms
-volatile float g_temp_c;           // temperature, C
-volatile float g_temp_f;           // temperature, F
+volatile uint32_t g_adc;      		// raw 12-bit count, 0..4095
+volatile uint32_t g_mv;       		// converted millivolts, 0..3300
+volatile float g_rt;               	// thermistor resistance, ohms
+volatile float g_temp_c;           	// temperature, C
+volatile float g_temp_f;           	// temperature, F
 
+void LEDS_Init(void);
 void ADC0_SS3_Init(void);
-unsigned long ADC0_Read(void);
-void delay(volatile unsigned long n);
+uint32_t ADC0_Read(void);
+void delay(volatile uint32_t n);
 
 int main(void)
 {
     uint32_t sum, i;
 
-	//Port F output - LED
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
-	while (!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOF)) {}
-	GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, RED_LED);
-	GPIOPinWrite(GPIO_PORTF_BASE, RED_LED, 0);
-
+	LEDS_Init();
     ADC0_SS3_Init();
 
     while (1)
@@ -96,12 +98,31 @@ int main(void)
             g_temp_f = g_temp_c * 1.8f + 32.0f;
         }
 
-        //---Temperature threshold instead of raw count---//
-        if (g_temp_c >= TEMP_ALERT_C) GPIOPinWrite(GPIO_PORTF_BASE, RED_LED, RED_LED);
-        else                          GPIOPinWrite(GPIO_PORTF_BASE, RED_LED, 0);
+        //---Temperature thresholds---//
+        if (g_temp_c >= TEMP_ALERT_HIGH)
+		{
+			GPIOPinWrite(GPIO_PORTF_BASE, LEDS, RED_LED);
+		}	
+        else if (g_temp_c <= TEMP_ALERT_LOW)
+		{
+			GPIOPinWrite(GPIO_PORTF_BASE, LEDS, BLUE_LED);
+		}
+		else
+		{
+			GPIOPinWrite(GPIO_PORTF_BASE, LEDS, GREEN_LED);
+		}
 
         delay(200000);                               // ~human-visible update rate
     }
+}
+
+void LEDS_Init(void)
+{
+	//Port F output - LED [this was moved out of main for organization]
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
+	while (!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOF)) {}
+	GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, LEDS);
+	GPIOPinWrite(GPIO_PORTF_BASE, LEDS, 0);
 }
 
 //---Configure ADC0 SS3: single sample of AIN0, processor (software) trigger---//
