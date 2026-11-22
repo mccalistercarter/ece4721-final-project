@@ -1,18 +1,16 @@
-// BLE_Function.c - Based on bluetooth_uart_example project
+// BLE_Function.C
 //
-// Talks to an Adafruit Bluefruit LE UART Friend on UART1.  The module's mode
-// switch must be on UART.  At startup the module is named BT_NAME; then
-// anything sent from the Bluefruit Connect app is echoed back to the phone
-// and shown on the debug console.
+// Talks to an Adafruit Bluefruit LE UART Friend.  The module's mode
+// switch must be on UART.  At startup the module is named BT_NAME;
 //
 // UART0 is a debug console on the USB virtual serial port (115,200 8-N-1);
 // use UARTprintf() to print to it.
 //
-// (Based on TI's uart_echo example for the EK-TM4C123GXL)
 //
 // Keil uVision version: builds with Arm Compiler 6 (or 5).  The vector table
 // and stack are in startup_keil.s.
 
+#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "inc/hw_gpio.h"
@@ -26,6 +24,7 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/uart.h"
 #include "utils/uartstdio.h"
+#include "string.h"
 
 //*****************************************************************************
 // Bluetooth (UART1) - copy this section to use it in your own project, and
@@ -47,6 +46,7 @@
 volatile uint8_t  rx_buffer[BT_RX_BUFFER_SIZE];
 volatile uint32_t rx_head = 0;
 volatile uint32_t rx_tail = 0;
+
 
 // Set up UART1 (PB0/PB1, RTS/CTS on PC4/PC5, 9600 8-N-1) and its interrupt.
 void BT_Init(void)
@@ -116,6 +116,21 @@ uint8_t BT_RX_Read(void)
     ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
 
     return c;
+}
+
+//Takes data and posts it to phone. Data deconstructed from struct in main
+void BT_Post_Log(uint32_t timestamp, const char *msg)
+{
+	char msg_store[64]; 
+	
+	if(msg == NULL)
+	{
+		return;
+	}
+	
+	snprintf(msg_store, sizeof(msg_store), "[%lu] %s\r\n", (unsigned long)timestamp, msg);
+	BT_TX_String(msg_store);
+	
 }
 
 // UART1 interrupt: move every byte the UART has received into rx_buffer.
@@ -192,28 +207,38 @@ void BT_Config(const char *name)
     BT_Flush();
 }
 
-//*****************************************************************************
-// Buttons: SW1 (PF4) and SW2 (PF0).  Each reads 0 while pressed.
-//*****************************************************************************
 
-// Set up SW1 and SW2 as inputs with pull-up resistors.
-void Buttons_Init(void)
+#define MAX_LINE_LEN 64
+char line[MAX_LINE_LEN];
+unsigned long line_len = 0;
+//Gets message from phone and compares commands. Returns 2 if logs need to be extracted
+int BT_Talk(char c)
 {
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
-
-    // PF0 is locked at reset (it can also be the NMI input), so unlock it
-    // before it can be set up as a normal input.
-    HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
-    HWREG(GPIO_PORTF_BASE + GPIO_O_CR) |= GPIO_PIN_0;
-    HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = 0;
-
-    // The buttons connect the pins to ground when pressed; the pull-ups hold
-    // them high otherwise.
-    ROM_GPIOPinTypeGPIOInput(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4);
-    ROM_GPIOPadConfigSet(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4,
-                         GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+	if(c =='\r' || c == '\n')
+	{
+		line[line_len] = '\0';
+		if(line_len > 0)
+		{
+			if(strcmp(line, "Logs") == 0) 
+			{
+				BT_TX_String("Loading Logs...\r\n");
+				delay_ms(15);
+				return 2;
+			}
+			else
+			{
+				BT_TX_String("Command Not Recognized\r\n");
+				return 0;
+			}
+		}
+		line_len = 0;
+	}
+	else if(line_len < MAX_LINE_LEN - 1)
+	{
+		line[line_len++] = c;
+	}
+	return 1;
 }
-
 
 
 //*****************************************************************************
@@ -241,24 +266,32 @@ void init(void)
     // Bluetooth module on UART1.
     BT_Init();
 
-    // SW1 and SW2 (used by EXAMPLE 2).
-    Buttons_Init();
+
 
     // Enable processor interrupts.
     ROM_IntMasterEnable();
 }
-
+typedef struct {
+		uint32_t timestamp;
+		const char *msg;
+} Log;
 int main(void)
 {
-    bool sw1, sw2;              // EXAMPLE 2: buttons pressed now?
-    bool sw1_was = false;       // EXAMPLE 2: ...and last time we checked?
-    bool sw2_was = false;
-
+    uint8_t packet[6];          // packet being received
+    int count = 0;              // bytes received so far
+		int BT_Return = 1;
+		
+		static const Log test_log[] = {
+			{100, "Temp Breach"},
+			{250, "Temp Breach"},
+			{3000, "Impact"},
+			{25322, "Impact"},
+			{52645, "Temp Breach"}
+		};
     init();
 
-    UARTprintf("\nbluetooth_uart_example started :)\n");
+    //UARTprintf("\nbluetooth_uart_example started :)\n");
 
-    // Name the module and set it up (takes about 2 seconds).
     BT_Config(BT_NAME);
     UARTprintf("Connect to \"%s\" in the Bluefruit Connect app.\n", BT_NAME);
 
@@ -283,52 +316,29 @@ int main(void)
             }
         }
         */
-
-        /*
-        // EXAMPLE 1: echo anything received over Bluetooth back to the phone,
-        // and show it on the debug console.  (Bluefruit Connect: UART)
+				
+				
         while(BT_RX_Available())
         {
             uint8_t c = BT_RX_Read();
-            BT_TX_Byte(c);
-            UARTprintf("%c", c);
-        }
-        */
 
-        // EXAMPLE 2: send a message to the phone when SW1 or SW2 is pressed
-        // or released.
-        // (Bluefruit Connect: UART)  Runs alongside EXAMPLE 3.
-        sw1 = (ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_4) == 0);
-        sw2 = (ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_0) == 0);
+            // Wait for the '!' that starts a packet.
+            if(count == 0 && c != '!')
+            {
+              BT_Return = BT_Talk(c);
+							if(BT_Return == 2)
+							{
+								for(uint32_t i = 0; i < (sizeof(test_log)/sizeof(test_log[0])); i++) //entire testlog array bytes divided by bytes of one element gives the number of elements
+								{
+									BT_Post_Log(test_log[i].timestamp, test_log[i].msg);
+								}
+								count = 0;
+							}
+							continue;
+            }
+						
+            packet[count++] = c;
 
-        // Send a message only when a button changes: when it goes down
-        // (pressed) or comes back up (released).
-        if(sw1 && !sw1_was)
-        {
-            BT_TX_String("SW1 pressed\n");
-            UARTprintf("Sent: SW1 pressed\n");
-        }
-        if(!sw1 && sw1_was)
-        {
-            BT_TX_String("SW1 released\n");
-            UARTprintf("Sent: SW1 released\n");
-        }
-        if(sw2 && !sw2_was)
-        {
-            BT_TX_String("SW2 pressed\n");
-            UARTprintf("Sent: SW2 pressed\n");
-        }
-        if(!sw2 && sw2_was)
-        {
-            BT_TX_String("SW2 released\n");
-            UARTprintf("Sent: SW2 released\n");
-        }
-        sw1_was = sw1;
-        sw2_was = sw2;
-
-        // Check the buttons every 10 ms.  A button's contacts bounce for a few
-        // ms when pressed or released; checking less often than that keeps
-        // one press from looking like several.
-        delay_ms(10);
+				}
     }
 }
