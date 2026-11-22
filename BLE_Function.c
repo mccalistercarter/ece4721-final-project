@@ -297,7 +297,7 @@ int main(void)
 
     while(1)
     {
-        /*
+			/* Debug testing:
         // EXAMPLE 0: show every byte received over Bluetooth on the debug
         // console, in hex (and as a character if it is printable).  Useful for
         // seeing exactly what the app sends from any screen.  Comment out
