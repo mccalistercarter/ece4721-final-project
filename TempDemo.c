@@ -71,45 +71,19 @@ void LEDS_Init(void);
 void ADC0_SS3_Init(void);
 uint32_t ADC0_Read(void);
 void delay(volatile uint32_t n);
+void LEDS_Update(void);
+uint32_t TEMP_Update(void);
 
 int main(void)
 {
-    uint32_t sum, i;
-
 	LEDS_Init();
     ADC0_SS3_Init();
 
     while (1)
     {
-        //---Average N readings---//
-        sum = 0;
-        for (i = 0; i < N_SAMPLES; i++) { 
-			sum += ADC0_Read();		// The purpose of this loop is to smooth out the ADC reading from the sensor to get an average in case their is electrical noise
-		}
-				
-        g_adc = sum / N_SAMPLES;
-        g_mv  = (g_adc * VREF_MV) / 4095UL;          // [adc_sensor_demo.c]
-
-        //---Count -> resistance -> temperature ---//
-        if (g_adc > 0 && g_adc < 4095)               // 0 = shorted, 4095 = open/unplugged
-        {
-            g_rt     = R_FIXED * (float)g_adc / (ADC_MAX - (float)g_adc);             // Calculates Thermistor resistance based on voltage divider equation (rearranged for resistance, but with ADC values)
-            g_temp_c = 1.0f / (logf(g_rt / R0) / B_COEF + 1.0f / T0_K) - 273.15f;
-            g_temp_f = g_temp_c * 1.8f + 32.0f;
-        }
-
-        //---Temperature thresholds---//
-        if (g_temp_c >= TEMP_ALERT_HIGH)
+        if (TEMP_Update())
 		{
-			GPIOPinWrite(GPIO_PORTF_BASE, LEDS, RED_LED);
-		}	
-        else if (g_temp_c <= TEMP_ALERT_LOW)
-		{
-			GPIOPinWrite(GPIO_PORTF_BASE, LEDS, BLUE_LED);
-		}
-		else
-		{
-			GPIOPinWrite(GPIO_PORTF_BASE, LEDS, GREEN_LED);
+			LEDS_Update();
 		}
 
         delay(200000);                               // ~human-visible update rate
@@ -154,6 +128,45 @@ uint32_t ADC0_Read(void) // [adc_sensor_demo.c] but with tivware api
     ADCIntClear(ADC0_BASE, ADC_SEQ);                     		// clear the INR3 flag// read the 12-bit sample from the FIFO
     ADCSequenceDataGet(ADC0_BASE, ADC_SEQ, &result);         	// read the 12-bit sample from the FIFO
     return result & 0XFFF; // from result = ADC0_SSFIFO3 & 0xFFF;
+}
+
+uint32_t TEMP_Update(void)	// moved from main()
+{
+	uint32_t sum, i;
+	sum = 0;
+	for (i = 0; i < N_SAMPLES; i++) { 
+			sum += ADC0_Read();		// The purpose of this loop is to smooth out the ADC reading from the sensor to get an average in case their is electrical noise
+		}
+				
+    g_adc = sum / N_SAMPLES;
+    g_mv  = (g_adc * VREF_MV) / 4095UL;          // [adc_sensor_demo.c]
+
+    //---Count -> resistance -> temperature ---//
+    if (g_adc > 0 && g_adc < 4095)               // 0 = shorted, 4095 = open/unplugged
+    {
+        g_rt     = R_FIXED * (float)g_adc / (ADC_MAX - (float)g_adc);             // Calculates Thermistor resistance based on voltage divider equation (rearranged for resistance, but with ADC values)
+        g_temp_c = 1.0f / (logf(g_rt / R0) / B_COEF + 1.0f / T0_K) - 273.15f;
+        g_temp_f = g_temp_c * 1.8f + 32.0f;
+		return 1;								// a good reading
+    }
+	return 0;									// a bad reading
+}
+
+void LEDS_Update(void)	// moved from main()
+{
+	//---Temperature thresholds---//
+    if (g_temp_c >= TEMP_ALERT_HIGH)		// hot
+	{
+		GPIOPinWrite(GPIO_PORTF_BASE, LEDS, RED_LED);
+	}	
+    else if (g_temp_c <= TEMP_ALERT_LOW)	// cold
+	{
+		GPIOPinWrite(GPIO_PORTF_BASE, LEDS, BLUE_LED);
+	}
+	else
+	{
+		GPIOPinWrite(GPIO_PORTF_BASE, LEDS, GREEN_LED);
+	}
 }
 
 void delay(volatile uint32_t n) { while (n--) { } } // [adc_sensor_demo.c]
