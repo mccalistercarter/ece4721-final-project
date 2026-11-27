@@ -36,9 +36,17 @@
 #include <stdbool.h>
 #include <math.h>       // logf() for temp math
 #include "inc/hw_memmap.h"
+#include "inc/hw_ints.h"
 #include "driverlib/sysctl.h"
 #include "driverlib/gpio.h"
 #include "driverlib/adc.h"
+#include "driverlib/timer.h"
+#include "driverlib/interrupt.h"
+
+//================  TIMING  ================//
+#define F_CLK        16000000UL                   // default internal osc (no PLL configured)
+#define PERIOD_MS    250UL                        // interrupt (and flag) every 250 ms
+#define RELOAD       ((F_CLK/1000UL)*PERIOD_MS)   // ticks in PERIOD_MS = 4,000,000
 
 //================  THERMISTOR PARAMETERS  ================//
 #define R_FIXED      10000.0f    // series resistor (top of divider), ohms
@@ -50,6 +58,11 @@
 #define TEMP_ALERT_HIGH 	29.0f       // LED higher threshold [NEW - replaces demo's count >= 2048]
 #define TEMP_ALERT_LOW 		20.0f		// LED lower threshold
 #define N_SAMPLES    		16          // readings averaged per update [noise filtering]
+
+//================  TEMPERATURE STATES  ================//
+#define STATE_OK     0           // within limits
+#define STATE_COLD   1           // below TEMP_ALERT_LOW
+#define STATE_HOT    2           // above TEMP_ALERT_HIGH
 
 //================  PINS  ================//
 #define RED_LED   	GPIO_PIN_1		//PF1
@@ -67,27 +80,63 @@ volatile float g_rt;               	// thermistor resistance, ohms
 volatile float g_temp_c;           	// temperature, C
 volatile float g_temp_f;           	// temperature, F
 
+volatile uint32_t g_ticks = 0;
+volatile uint32_t g_newsample = 0;
+volatile uint32_t g_alertflag = 0;
+volatile uint32_t g_alertcount = 0;
+volatile uint32_t g_temp_state = STATE_OK;
+
+uint32_t g_prev_state = STATE_OK;
+volatile uint32_t g_alert_state = STATE_OK;
+
 void LEDS_Init(void);
 void ADC0_SS3_Init(void);
 uint32_t ADC0_Read(void);
-void delay(volatile uint32_t n);
 void LEDS_Update(void);
 uint32_t TEMP_Update(void);
+void TEMP_State(void); 
+void Timer0A_Periodic_Init(void);
+
+//=== THE TIMER INTERRUPT ===//
+void TIMER0A_Handler(void)			// referenced from timer_periodic_demo.c
+{
+	TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);		// clear the timeout flag
+	g_newsample = 1;
+	g_ticks++;											// count interrupts
+}
 
 int main(void)
 {
 	LEDS_Init();
     ADC0_SS3_Init();
+	Timer0A_Periodic_Init();
+	IntMasterEnable();				// make sure interrupts are globally enabled
 
     while (1)
-    {
-        if (TEMP_Update())
-		{
-			LEDS_Update();
+	{
+	    if (g_newsample)
+	    {
+			g_newsample = 0;
+	
+			if (TEMP_Update())
+	      	{
+				TEMP_State();
+	       		LEDS_Update();
+	
+				if (g_temp_state != g_prev_state)
+				{
+					g_prev_state = g_temp_state;
+	
+					if (g_temp_state != STATE_OK)
+					{
+						g_alert_state = g_temp_state;
+						g_alertflag = 1;
+						g_alertcount++;
+					}
+				}
+			}
 		}
-
-        delay(200000);                               // ~human-visible update rate
-    }
+	}
 }
 
 void LEDS_Init(void)
@@ -130,6 +179,39 @@ uint32_t ADC0_Read(void) // [adc_sensor_demo.c] but with tivware api
     return result & 0XFFF; // from result = ADC0_SSFIFO3 & 0xFFF;
 }
 
+//---TIMER0A: 32-bit periodic, interrupt every PERIOD_MS---//
+void Timer0A_Periodic_Init(void)		// [timer_periodic_demo.c] but with tivware api
+{
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);             	// enable the TIMER0 clock
+    while (!SysCtlPeripheralReady(SYSCTL_PERIPH_TIMER0)) { }  	// wait until the timer is ready
+
+    TimerDisable(TIMER0_BASE, TIMER_A);                        	// disable Timer A while we configure it
+    TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);          	// 32-bit timer mode, periodic, count-down, auto-reload
+    TimerLoadSet(TIMER0_BASE, TIMER_A, RELOAD - 1);            	// reload value: period = (TAILR+1)/f_clk -> N+1 rule
+    TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);            	// clear any stale time-out flag
+    TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);          	// enable the time-out interrupt in the timer
+
+    IntEnable(INT_TIMER0A);                                    	// enable TIMER0A in the NVIC
+
+	TimerEnable(TIMER0_BASE, TIMER_A);							// start timer A
+}
+
+void TEMP_State(void)
+{
+	if (g_temp_c >= TEMP_ALERT_HIGH)
+    {
+        g_temp_state = STATE_HOT;
+    }
+    else if (g_temp_c <= TEMP_ALERT_LOW)
+    {
+        g_temp_state = STATE_COLD;
+    }
+    else
+    {
+        g_temp_state = STATE_OK;
+	}
+}
+
 uint32_t TEMP_Update(void)	// moved from main()
 {
 	uint32_t sum, i;
@@ -168,5 +250,3 @@ void LEDS_Update(void)	// moved from main()
 		GPIOPinWrite(GPIO_PORTF_BASE, LEDS, GREEN_LED);
 	}
 }
-
-void delay(volatile uint32_t n) { while (n--) { } } // [adc_sensor_demo.c]
